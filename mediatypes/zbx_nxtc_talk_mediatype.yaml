@@ -1,0 +1,153 @@
+zabbix_export:
+  version: '7.2'
+  media_types:
+    - name: Nextcloud
+      type: WEBHOOK
+      parameters:
+        - name: eventid
+          value: '{EVENT.ID}'
+        - name: mention
+          value: ''
+        - name: message
+          value: '{ALERT.MESSAGE}'
+        - name: password
+          value: 
+        - name: sendto
+          value: 
+        - name: serverurl
+          value: ''
+        - name: subject
+          value: '{ALERT.SUBJECT}'
+        - name: user
+          value: zabbix-bot
+      attempts: '5'
+      script: |
+        try {
+                    var params = JSON.parse(value),
+                        req = new HttpRequest(),
+                        body = {},
+                        resp = '';
+        
+        			const severityIcons = {
+          				'Not classified': '❔',
+          				'Information':    'ℹ️',
+          				'Warning':        '⚠️',
+          				'Average':        '❗',
+          				'High':           '⛔',
+          				'Disaster':       '🚨'
+        			};
+        			params.message = params.message.replace(/\*\*(Not classified|Information|Warning|Average|High|Disaster)\*\*/, function(m,sev){ var icons={'Not classified':'❔','Information':'ℹ️','Warning':'⚠️','Average':'❗','High':'⛔','Disaster':'🚨'}; return icons[sev]+' **'+sev+'**'; });
+        
+                    var AuthString = btoa(params.user+':'+params.password);
+        
+                    req.addHeader('Content-Type: application/json');
+                    req.addHeader('Authorization: Basic '+AuthString);
+                    req.addHeader('Accept: application/json, text/plain, */*');
+                    req.addHeader('OCS-APIRequest: true');
+        
+        			var url = params.serverurl + '/ocs/v2.php/apps/spreed/api/v1/chat/' + params.sendto;
+                    body.token = params.sendto;
+                    body.message = params.message;
+        
+        			body.message += '\n\n';
+        			body.message += params.mention
+        			body.referenceId = params.eventid;
+        
+        			var hist = JSON.parse(
+          				req.get(url + '?format=json&limit=50&lookIntoFuture=0')
+        			);
+        			for (var i = 0; hist.ocs && hist.ocs.data && i < hist.ocs.data.length; i++) {
+        				if (hist.ocs.data[i].referenceId === params.eventid) {
+        					// Só adiciona replyTo se não for a primeira
+        					if (params.subject.indexOf('✅') === 0 || params.subject.indexOf('🔄') === 0) {
+        						body.replyTo = hist.ocs.data[i].id;
+        					}
+        				break;
+        				}
+        			}
+        
+                    Zabbix.log(4, '[Nextcloud Webhook] Sending request:' + JSON.stringify(body));
+                    resp = req.post(url,
+                        JSON.stringify(body)
+                    );
+                    Zabbix.log(4, '[Nextcloud Webhook] Receiving response:' + resp);
+                
+                    try {
+                        resp = JSON.parse(resp);
+                    }
+                    catch (error) {
+                        throw 'incorrect response. Nextcloud returned a non-JSON object.';
+                    }
+        
+                    if (resp['ocs']['meta']['statuscode'] != 201) {
+                        throw resp['ocs']['meta']['message'];
+                    }
+                
+                    if (resp['ocs']['meta']['message'] != 'OK') {
+                        throw 'Unknown error.';
+                    }
+                
+                    return 'OK';
+                }
+                catch (error) {
+                    Zabbix.log(3, '[Nextcloud Webhook] Notification failed : ' + error);
+                    throw 'Nextcloud notification failed : ' + error;
+                }
+      timeout: 60s
+      message_templates:
+        - event_source: TRIGGERS
+          operation_mode: PROBLEM
+          subject: '🚨 {EVENT.SEVERITY}: {EVENT.NAME}'
+          message: |
+            ### 🚨 **Problema Detected**
+            **Host:** {HOST.NAME}  
+            **Trigger:** {EVENT.NAME}  
+            **Severity:** **{EVENT.SEVERITY}**  
+            **Início:** {EVENT.DATE} ⏰ {EVENT.TIME}  
+            **Dados operacionais:** `{EVENT.OPDATA}`  
+            **Link:** {TRIGGER.URL}
+        - event_source: TRIGGERS
+          operation_mode: RECOVERY
+          subject: '✅ Resolvido: {EVENT.NAME}'
+          message: |
+            ### ✅ **Problema Resolvido**
+            **Trigger:** {EVENT.NAME}  
+            **Host:** {HOST.NAME}  
+            **Duração:** {EVENT.DURATION}  
+            **Resolvido em:** {EVENT.RECOVERY.DATE} ⏰ {EVENT.RECOVERY.TIME}
+        - event_source: TRIGGERS
+          operation_mode: UPDATE
+          subject: '🔄 Atualização: {EVENT.NAME}'
+          message: |
+            ### 🔄 **Atualização de Problema**
+            **Trigger:** {EVENT.NAME}  
+            **Host:** {HOST.NAME}  
+            **Ação:** {USER.FULLNAME} {EVENT.UPDATE.ACTION}  
+            **Quando:** {EVENT.UPDATE.DATE} ⏰ {EVENT.UPDATE.TIME}  
+            **Status atual:** **{EVENT.STATUS}**  
+            **Idade do problema:** {EVENT.AGE}  
+            **Mensagem:**  
+            > {EVENT.UPDATE.MESSAGE}
+        - event_source: DISCOVERY
+          operation_mode: PROBLEM
+          subject: '🔍 Descoberta: {DISCOVERY.DEVICE.STATUS} em {DISCOVERY.DEVICE.IPADDRESS}'
+          message: |
+            ### 🔍 **Novo Dispositivo**
+            **Regra:** {DISCOVERY.RULE.NAME}  
+            **IP:** {DISCOVERY.DEVICE.IPADDRESS}  
+            **DNS:** {DISCOVERY.DEVICE.DNS}  
+            **Status:** {DISCOVERY.DEVICE.STATUS}  
+            **Uptime:** {DISCOVERY.DEVICE.UPTIME}  
+            ---
+            **Serviço:** {DISCOVERY.SERVICE.NAME}  
+            **Porta:** {DISCOVERY.SERVICE.PORT}  
+            **Status do Serviço:** {DISCOVERY.SERVICE.STATUS}  
+            **Uptime do Serviço:** {DISCOVERY.SERVICE.UPTIME}
+        - event_source: AUTOREGISTRATION
+          operation_mode: PROBLEM
+          subject: '🖥️ Novo Host Registrado: {HOST.HOST}'
+          message: |
+            ### 🖥️ **Auto-registro**
+            **Host:** {HOST.HOST}  
+            **IP:** {HOST.IP}  
+            **Porta do Agente:** {HOST.PORT}

@@ -1,0 +1,36 @@
+zabbix_export:
+  version: '7.2'
+  template_groups:
+    - uuid: 559c60a338f34269a66d879894db4958
+      name: Templates/Backups
+  templates:
+    - uuid: 155395d6b352477188c6d1eadfe53fe0
+      template: 'Template Duplicati Backup'
+      name: 'Template Duplicati Backup'
+      groups:
+        - name: Templates/Backups
+      discovery_rules:
+        - uuid: 7edbee4eff85469c97934040771abf71
+          name: 'Duplicati backup jobs'
+          type: TRAP
+          key: duplicati.backup.discovery
+          lifetime: 90d
+          enabled_lifetime_type: DISABLE_AFTER
+          enabled_lifetime: 30d
+          item_prototypes:
+            - uuid: 288c04544cf64b59a14f651a9b588489
+              name: 'Duplicati backup status'
+              type: TRAP
+              key: 'duplicati.backup.status[{#BACKUP_ID}]'
+              value_type: TEXT
+              trigger_prototypes:
+                - uuid: d6450a210c35490f89ec1a212d9f9dcc
+                  expression: 'find(/Template Duplicati Backup/duplicati.backup.status[{#BACKUP_ID}],,"like","Warning")>0'
+                  recovery_mode: NONE
+                  name: '⚠️ AVISO no backup {#BACKUP_ID}'
+                  priority: WARNING
+                - uuid: 93614bb65f244738a2706aa8086e99dd
+                  expression: 'find(/Template Duplicati Backup/duplicati.backup.status[{#BACKUP_ID}],,"like","Fatal")>0 or find(/Template Duplicati Backup/duplicati.backup.status[{#BACKUP_ID}],,"like","Error")>0'
+                  name: '❌ ERRO no backup {#BACKUP_ID}'
+                  priority: HIGH
+                  manual_close: 'YES'
