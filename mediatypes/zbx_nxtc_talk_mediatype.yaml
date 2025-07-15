@@ -1,3 +1,4 @@
+# Based of: https://github.com/MartinixH/zabbix-media-nextcloud
 zabbix_export:
   version: '7.2'
   media_types:
